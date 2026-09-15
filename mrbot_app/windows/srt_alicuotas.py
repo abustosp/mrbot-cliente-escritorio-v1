@@ -182,7 +182,7 @@ class SrtAlicuotasWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             proxy_request=proxy_request,
         )
 
-        self.log_request_started(response.get("request_payload_safe"))
+        self.log_request_started(response.get("request_payload"))
         self.log_response_finished(response.get("http_status"), response.get("data"))
 
         data = response.get("data", {})
@@ -342,7 +342,7 @@ class SrtAlicuotasWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
                 proxy_request=payload["proxy_request"],
             )
             self.log_request_started(
-                resp.get("request_payload_safe"),
+                resp.get("request_payload"),
                 attempt=attempt,
                 total_attempts=total_attempts,
             )

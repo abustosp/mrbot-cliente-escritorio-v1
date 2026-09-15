@@ -4,6 +4,7 @@ La documentación principal está consolidada en `README.md`.
 
 ## Entradas rápidas
 - **Instalación y configuración**: `README.md` (secciones “Qué necesitas” e “Instalación y configuración”)
+- **Credenciales cifradas (clave_encriptada)**: `README.md` → “Credenciales cifradas en tránsito”; código en `mrbot_app/seguridad.py`
 - **GUI**: `README.md` → “Ejecutar la GUI”
 - **Código/endpoint**: `README.md` → “Uso programático” y “Endpoints y módulos clave”
 - **Tests**: `README.md` → “Tests y validación”

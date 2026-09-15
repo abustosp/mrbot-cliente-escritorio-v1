@@ -5,8 +5,19 @@ Script para verificar que carga_minio=True se envía correctamente en la request
 
 import sys
 import json
+from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+from cryptography.hazmat.primitives.asymmetric import rsa
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from mrbot_app.mis_comprobantes import consulta_mc
+
+# Clave publica efimera: los tests no deben pegarle a la API para cifrar.
+CLAVE_PUBLICA_TEST = rsa.generate_private_key(public_exponent=65537, key_size=2048).public_key()
 
 print("="*70)
 print("VERIFICACIÓN: Parámetro carga_minio=True en Request")
@@ -31,7 +42,8 @@ print("\n[TEST 2] Verificar que carga_minio se envía en el payload")
 print("-"*70)
 
 # Mock de requests.post para capturar el payload
-with patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
+with patch('mrbot_app.seguridad.obtener_clave_publica', return_value=CLAVE_PUBLICA_TEST), \
+     patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
     # Configurar mock para retornar una respuesta simulada
     mock_response = MagicMock()
     mock_response.json.return_value = {
@@ -96,6 +108,17 @@ with patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
                 print(f"  ✓ {key}: {actual_value}")
             else:
                 print(f"  ✗ {key}: {actual_value} (esperado: {expected_value})")
+
+        # Verificar que la credencial viaja cifrada y no en texto plano
+        print("\n🔐 Verificación de credencial:")
+        if payload.get('clave_encriptada'):
+            print("  ✓ clave_encriptada presente en el payload")
+        else:
+            print("  ✗ clave_encriptada NO está en el payload")
+        if 'contrasena' in payload:
+            print(f"  ✗ contrasena viaja en texto plano: {payload['contrasena']}")
+        else:
+            print("  ✓ contrasena no viaja en texto plano")
     else:
         print("❌ requests.post no fue llamado")
 
@@ -103,7 +126,8 @@ with patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
 print("\n[TEST 3] Verificar con carga_minio=False explícito")
 print("-"*70)
 
-with patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
+with patch('mrbot_app.seguridad.obtener_clave_publica', return_value=CLAVE_PUBLICA_TEST), \
+     patch('mrbot_app.mis_comprobantes.requests.post') as mock_post:
     mock_response = MagicMock()
     mock_response.json.return_value = {
         'success': True,

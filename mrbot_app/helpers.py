@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import sys
@@ -9,6 +10,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import pandas as pd
 import requests
 from mrbot_app.config import get_request_timeouts
+from mrbot_app.seguridad import (
+    CAMPO_CLAVE_ENCRIPTADA,
+    ClaveEncriptacionError,
+    base_url_de,
+    invalidar_cache_clave_publica,
+    preparar_payload,
+    tiene_clave_plana,
+)
 
 
 def ensure_trailing_slash(url: str) -> str:
@@ -24,11 +33,13 @@ def build_headers(api_key: str, email: str) -> Dict[str, str]:
     return headers
 
 
-def safe_post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout_sec: Optional[int] = None) -> Dict[str, Any]:
-    post_timeout, _ = get_request_timeouts()
-    effective_timeout = timeout_sec if timeout_sec is not None else post_timeout
+def _error_resultado(message: str) -> Dict[str, Any]:
+    return {"http_status": None, "data": {"success": False, "message": message}}
+
+
+def _post_json(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout: int) -> Dict[str, Any]:
     try:
-        resp = requests.post(url, headers=headers, json=payload, timeout=effective_timeout)
+        resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
         try:
             data = resp.json()
         except Exception:
@@ -36,6 +47,39 @@ def safe_post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeou
         return {"http_status": resp.status_code, "data": data}
     except Exception as exc:
         return {"http_status": None, "data": {"success": False, "message": f"Error de conexion: {exc}"}}
+
+
+def _es_error_de_descifrado(resultado: Dict[str, Any]) -> bool:
+    if resultado.get("http_status") != 422:
+        return False
+    detalle = json.dumps(resultado.get("data", {}), ensure_ascii=False, default=str).lower()
+    return "desencriptar" in detalle
+
+
+def safe_post(url: str, headers: Dict[str, str], payload: Dict[str, Any], timeout_sec: Optional[int] = None) -> Dict[str, Any]:
+    """POST a la API cifrando la clave fiscal en tránsito (campo ``clave_encriptada``)."""
+    post_timeout, _ = get_request_timeouts()
+    effective_timeout = timeout_sec if timeout_sec is not None else post_timeout
+
+    base_url = ""
+    payload_envio = payload
+    try:
+        base_url = base_url_de(url)
+        payload_envio = preparar_payload(payload, base_url)
+    except ClaveEncriptacionError as exc:
+        if tiene_clave_plana(payload):
+            return _error_resultado(f"No se pudo cifrar la clave fiscal: {exc}")
+        payload_envio = payload
+
+    resultado = _post_json(url, headers, payload_envio, effective_timeout)
+
+    if base_url and _es_error_de_descifrado(resultado):
+        # La clave publica del servidor cambio: la proxima consulta usa la clave nueva.
+        invalidar_cache_clave_publica(base_url)
+
+    if CAMPO_CLAVE_ENCRIPTADA in payload_envio:
+        resultado["request_payload"] = payload_envio
+    return resultado
 
 
 def safe_get(url: str, headers: Dict[str, str], timeout_sec: Optional[int] = None) -> Dict[str, Any]:

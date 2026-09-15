@@ -118,12 +118,6 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         formatted = self._format_log_line(text, prefix, style)
         self.log_message(formatted)
 
-    def _redact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        safe = dict(payload)
-        if "clave" in safe:
-            safe["clave"] = "***"
-        return safe
-
     def _ensure_extension(self, name: str, ext: str) -> str:
         clean = (name or "").strip()
         if not clean:
@@ -327,7 +321,10 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
     def _worker_individual(self, url, headers, payload):
         self.log_start("SCT", {"modo": "individual"})
         self.log_separator(payload["cuit_representado"])
-        self.log_request_started(self._redact(payload))
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request_started(payload)
         resp = safe_post(url, headers, payload)
         self.log_response_finished(resp.get("http_status"), resp.get("data"))
         self.set_preview(self.result_box, json.dumps(resp, indent=2, ensure_ascii=False))
@@ -476,7 +473,9 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         self.log_separator(payload["cuit_representado"])
         self.log_info(f"Bloques activos -> deuda={include_deuda}, vencimientos={include_venc}, ddjj={include_ddjj}")
         self.log_info(f"Salidas solicitadas -> {json.dumps(outputs, ensure_ascii=False)}")
-        safe_payload = self._redact(payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return None
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -487,7 +486,7 @@ class SctWindow(BaseWindow, ExcelHandlerMixin):
         resp = {}
         data = {}
         for attempt in range(1, total_attempts + 1):
-            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
+            self.log_request_started(payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})

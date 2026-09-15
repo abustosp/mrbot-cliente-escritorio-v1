@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, Optional
 import requests
 from dotenv import load_dotenv
 
+from mrbot_app.seguridad import ClaveEncriptacionError, preparar_payload
+
 load_dotenv(".env", override=True)
 
 root_url = os.getenv("URL", "https://api-bots.mrbot.com.ar")
@@ -98,12 +100,19 @@ def consulta_portal_iva(
     if proxy_request is not None:
         payload["proxy_request"] = proxy_request
 
-    safe_payload = dict(payload)
-    if "clave_representante" in safe_payload:
-        safe_payload["clave_representante"] = "***"
+    try:
+        payload = preparar_payload(payload, root_url)
+    except ClaveEncriptacionError as exc:
+        error = f"No se pudo cifrar la clave fiscal: {exc}"
+        _log_error(error, log_fn)
+        return {
+            "success": False,
+            "error": error,
+            "http_status": None,
+        }
 
     _log_message(f"REQUEST INICIO: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}", log_fn)
-    _log_request(safe_payload, log_fn)
+    _log_request(payload, log_fn)
     _log_message("", log_fn)
 
     response = requests.post(url, headers=headers, json=payload)

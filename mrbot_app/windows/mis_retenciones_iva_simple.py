@@ -137,11 +137,12 @@ class MisRetencionesIvaSimpleWindow(BaseWindow, DownloadHandlerMixin):
         )
 
     def _worker_individual(self, url: str, headers: Dict[str, str], payload: Dict[str, Any]) -> None:
-        safe_payload = dict(payload)
-        safe_payload["clave_representante"] = "***"
         self.log_start("Mis Retenciones IVA Simple", {"modo": "individual", "operaciones": list(IVA_SIMPLE_OPERACIONES)})
         self.log_separator(payload.get("cuit_representado") or payload.get("cuit_representante"))
-        self.log_request_started(safe_payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request_started(payload)
         response = safe_post(url, headers, payload)
         data = response.get("data", {}) if isinstance(response, dict) else {}
         self.log_response_finished(response.get("http_status") if isinstance(response, dict) else None, data)

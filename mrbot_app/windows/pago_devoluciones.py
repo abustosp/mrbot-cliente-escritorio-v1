@@ -157,13 +157,14 @@ class PagoDevolucionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin
         )
 
     def _worker_individual(self, url, headers, payload):
-        safe_payload = dict(payload)
-        safe_payload["clave_representante"] = "***"
         cuit_repr = payload.get("cuit_representado")
 
         self.log_start("Pago Devoluciones", {"modo": "individual"})
         self.log_separator(cuit_repr or payload["cuit_representante"])
-        self.log_request_started(safe_payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request_started(payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
         self.log_response_finished(resp.get("http_status"), data)
@@ -274,8 +275,9 @@ class PagoDevolucionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin
         }
         if proxy_request is not None:
             payload["proxy_request"] = proxy_request
-        safe_payload = dict(payload)
-        safe_payload["clave_representante"] = "***"
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return None
         self.log_separator(cuit_repr or cuit_rep)
 
         try:
@@ -287,7 +289,7 @@ class PagoDevolucionesWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin
         resp: Dict[str, Any] = {}
         data: Dict[str, Any] = {}
         for attempt in range(1, total_attempts + 1):
-            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
+            self.log_request_started(payload, attempt=attempt, total_attempts=total_attempts)
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})
             self.log_response_finished(resp.get("http_status"), data)

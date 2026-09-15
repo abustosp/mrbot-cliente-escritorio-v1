@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import requests
 from dotenv import load_dotenv
 
+from mrbot_app.seguridad import ClaveEncriptacionError, preparar_payload
+
 load_dotenv(".env", override=True)
 
 root_url = os.getenv("URL", "https://api-bots.mrbot.com.ar")
@@ -42,10 +44,8 @@ def _log_error(message: str, log_fn: Optional[Callable[[str], None]] = None) -> 
 
 
 def _log_payload(payload: Dict[str, Any], log_fn: Optional[Callable[[str], None]] = None) -> None:
-    safe = {}
-    for k, v in payload.items():
-        safe[k] = "***" if k == "clave_representante" else v
-    serialized = json.dumps(safe, ensure_ascii=False, default=str)
+    """Loguea el body enviado: la clave viaja cifrada en ``clave_encriptada``, sin texto plano."""
+    serialized = json.dumps(payload, ensure_ascii=False, default=str)
     _log_message(f"PAYLOAD: {serialized}", log_fn)
 
 
@@ -148,6 +148,17 @@ def carga_iva_simple(
     }
 
     files = _build_files_list(archivos or {})
+
+    try:
+        data = preparar_payload(data, root_url)
+    except ClaveEncriptacionError as exc:
+        error = f"No se pudo cifrar la clave fiscal: {exc}"
+        _log_error(error, log_fn)
+        return {
+            "success": False,
+            "error": error,
+            "http_status": None,
+        }
 
     _log_message(f"REQUEST INICIO: {datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}", log_fn)
     _log_payload(data, log_fn)

@@ -201,12 +201,6 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
                 errors.append(f"{json_name}: {exc}")
         return saved, errors
 
-    def _redact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        safe = dict(payload)
-        if "clave" in safe:
-            safe["clave"] = "***"
-        return safe
-
     def consulta_individual(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
@@ -236,7 +230,10 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
 
     def _worker_individual(self, url, headers, payload):
         self.log_separator(payload["representado_cuit"])
-        self.log_request_started(self._redact(payload))
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request_started(payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data")
         self.log_response_finished(resp.get("http_status"), data)
@@ -367,7 +364,9 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         }
         if proxy_request is not None:
             payload["proxy_request"] = proxy_request
-        safe_payload = self._redact(payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return None
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -378,7 +377,7 @@ class RcelWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, DownloadH
         resp = {}
         data = {}
         for attempt in range(1, total_attempts + 1):
-            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
+            self.log_request_started(payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})

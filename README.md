@@ -40,6 +40,25 @@ Si `NOTIFICACION_MESSAGEBOX=true`, la GUI muestra un `messagebox` al finalizar l
 - `warning` si hubo advertencias o fallas parciales.
 - `error` si todas fallaron.
 
+### Credenciales cifradas en tránsito
+La clave fiscal nunca viaja en texto plano: el cliente la cifra con la clave pública RSA
+del servidor y la envía en el campo `clave_encriptada` de cada request de bots
+(consultas individuales y masivas de todos los módulos).
+- Clave pública: `GET /api/v1/security/public-key` (RSA-OAEP-SHA256, respuesta Base64).
+- Si el servidor no responde o responde con un algoritmo inesperado, la request **no se envía**
+  (no hay fallback a texto plano).
+- El log de la GUI muestra el body tal como se envía: `clave_encriptada` con su valor **sin
+  censurar** (es el único caso donde no se censura, porque ya está cifrado). La clave en texto
+  plano no se escribe nunca en el log ni en los archivos de salida.
+- La clave pública se cachea en memoria; si el servidor rota su par de claves, el primer
+  request falla con `No se pudo desencriptar la credencial` y la cache se invalida sola,
+  así la consulta siguiente ya usa la clave nueva.
+- Opcional en `.env`: `PUBLIC_KEY_CACHE_SEC` (segundos de cache, default `3600`).
+
+```env
+PUBLIC_KEY_CACHE_SEC=3600
+```
+
 Para Webservices (token/sign automático vía API de certificados):
 ```env
 WSAA_TESTING=true
@@ -113,6 +132,7 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 ├── mrbot_app/               # Helpers y ventanas Tkinter por módulo
 │   ├── consulta.py          # Descargas MinIO y requests restantes
 │   ├── helpers.py
+│   ├── seguridad.py         # Cifrado RSA de la clave fiscal (clave_encriptada)
 │   ├── mis_comprobantes.py  # Lógica Mis Comprobantes (consulta y CSV masivo)
 │   ├── wsaa.py              # Obtención token/sign (veconsumerws/wsfe) vía api-certificados
 │   └── windows/             # mis_comprobantes, rcel, sct, srt_alicuotas, ccma, apocrifos, consulta_cuit, webservices (token/sign)
@@ -125,6 +145,7 @@ resultados = descargar_archivos_minio_concurrente(archivos, max_workers=10)
 ```
 
 ## Endpoints y módulos clave
+- Credenciales: `GET /api/v1/security/public-key` (clave pública para cifrar la clave fiscal, ver “Credenciales cifradas en tránsito”)
 - Mis Comprobantes: `POST /api/v1/mis_comprobantes/consulta` (GUI: “Descarga Mis Comprobantes”, código: `mrbot_app.mis_comprobantes.consulta_mc`)
 - RCEL: `POST /api/v1/rcel/consulta` (GUI: ventana RCEL)
 - SCT: `POST /api/v1/sct/consulta` (GUI: ventana SCT con descargas MinIO)
@@ -145,6 +166,10 @@ Helpers reutilizables: `mrbot_app/helpers.py` (safe_get/safe_post, previews de D
 ## Tests y validación
 ```bash
 python -m py_compile mrbot.py mrbot_app/*.py mrbot_app/windows/*.py
+# Tests de cifrado de credenciales (herméticos, sin red ni credenciales)
+pytest tests/test_seguridad_clave.py tests/test_claves_cifradas_en_requests.py
+# Ventanas reales (UI y Excel) contra transporte mockeado; requiere display
+pytest tests/test_ventanas_clave_encriptada.py
 # Tests (algunos requieren credenciales/Excels)
 pytest tests  # o python tests/test_sct_descarga.py o python tests/test_srt_alicuotas_descarga.py
 ```

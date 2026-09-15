@@ -123,11 +123,12 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         self.run_in_thread(self._worker_individual, url, headers, payload)
 
     def _worker_individual(self, url, headers, payload):
-        safe_payload = dict(payload)
-        safe_payload["clave"] = "***"
         self.log_start("Aportes en Linea", {"modo": "individual"})
         self.log_separator(payload["cuit_representado"] or payload["cuit_login"])
-        self.log_request(safe_payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request(payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
         self.log_response(resp.get("http_status"), data)
@@ -224,9 +225,10 @@ class AportesEnLineaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         }
         if proxy_request is not None:
             payload["proxy_request"] = proxy_request
-        safe_payload = dict(payload)
-        safe_payload["clave"] = "***"
-        self.log_request(safe_payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return None
+        self.log_request(payload)
 
         try:
             retry_val = int(row.get("retry", 0))

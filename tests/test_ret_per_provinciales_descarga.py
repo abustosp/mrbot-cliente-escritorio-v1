@@ -12,6 +12,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from mrbot_app.consulta import descargar_archivo_minio
+from mrbot_app.seguridad import cifrar_clave
 
 load_dotenv()
 
@@ -32,6 +33,11 @@ if API_KEY:
     HEADERS["x-api-key"] = API_KEY
 if MAIL:
     HEADERS["email"] = MAIL
+
+
+def _cred(clave: str) -> dict:
+    """La clave fiscal viaja cifrada con la clave publica del servidor."""
+    return {"clave_encriptada": cifrar_clave(clave, BASE_URL)}
 
 
 def _download_first(links: list[str]) -> None:
@@ -63,7 +69,7 @@ def test_arba_descarga() -> None:
 
     payload = {
         "cuit": TEST_RETPER_ARBA_CUIT,
-        "clave": TEST_RETPER_ARBA_CLAVE,
+        **_cred(TEST_RETPER_ARBA_CLAVE),
         "periodo": "202601",
         "denominacion": "Test ARBA",
         "carga_minio": True,
@@ -88,7 +94,7 @@ def test_agip_descarga() -> None:
 
     payload = {
         "usuario": TEST_RETPER_AGIP_USUARIO,
-        "clave": TEST_RETPER_AGIP_CLAVE,
+        **_cred(TEST_RETPER_AGIP_CLAVE),
         "cuit_representado": TEST_RETPER_AGIP_CUIT,
         "denominacion": "Test AGIP",
         "desde": "202601",
@@ -115,7 +121,7 @@ def test_misiones_descarga() -> None:
 
     payload = {
         "cuit_representante": TEST_RETPER_MISIONES_CUIT,
-        "clave_representante": TEST_RETPER_MISIONES_CLAVE,
+        **_cred(TEST_RETPER_MISIONES_CLAVE),
         "cuit_representado": TEST_RETPER_MISIONES_CUIT,
         "denominacion": "Test Misiones",
         "desde": "202601",

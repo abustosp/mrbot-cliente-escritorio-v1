@@ -116,12 +116,6 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
             links = collect_minio_links(data, "hacienda")
         return links
 
-    def _redact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        safe = dict(payload)
-        if "clave" in safe:
-            safe["clave"] = "***"
-        return safe
-
     def consulta_individual(self) -> None:
         base_url, api_key, email = self._get_config()
         headers = build_headers(api_key, email)
@@ -150,7 +144,10 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
         cuit_folder = payload.get("representado_cuit") or payload.get("cuit_representante")
         self.log_start("Hacienda", {"modo": "individual"})
         self.log_separator(cuit_folder or "sin_cuit")
-        self.log_request_started(self._redact(payload))
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request_started(payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data", {})
         self.log_response_finished(resp.get("http_status"), data)
@@ -262,7 +259,9 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
         if proxy_request is not None:
             payload["proxy_request"] = proxy_request
         self.log_separator(cuit_repr or cuit_rep or "sin_cuit")
-        safe_payload = self._redact(payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return None
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -273,7 +272,7 @@ class HaciendaWindow(BaseWindow, ExcelHandlerMixin, DateRangeHandlerMixin, Downl
         resp: Dict[str, Any] = {}
         data: Dict[str, Any] = {}
         for attempt in range(1, total_attempts + 1):
-            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
+            self.log_request_started(payload, attempt=attempt, total_attempts=total_attempts)
 
             resp = safe_post(url, headers, payload)
             data = resp.get("data", {})

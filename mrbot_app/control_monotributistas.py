@@ -14,6 +14,7 @@ from mrbot_app.mis_comprobantes import consulta_mc, crear_directorio_seguro, ext
 from mrbot_app.consulta import descargar_archivos_minio_concurrente
 from mrbot_app.config import get_timeout_mc_control_monotributo
 from mrbot_app.helpers import format_date_str, safe_post, build_headers, ensure_trailing_slash
+from mrbot_app.seguridad import preparar_payload
 from mrbot_app.formatos import (
     aplicar_formato_encabezado,
     aplicar_formato_moneda,
@@ -595,10 +596,8 @@ def procesar_descarga_rcel(
                 "errores_descarga": "Abortado por el usuario",
             }
 
-        # Log request (redacted)
-        safe_payload = payload.copy()
-        safe_payload['clave'] = '***'
-        _log_message(f"RCEL Request: {json.dumps(safe_payload, default=str)}", log_fn)
+        payload = preparar_payload(payload, url_api)
+        _log_message(f"RCEL Request: {json.dumps(payload, default=str)}", log_fn)
 
         response = safe_post(url_api, headers, payload)
         data = response.get("data")

@@ -42,6 +42,7 @@ DEFAULT_POST_TIMEOUT = _get_env_int("TIMEOUT_POST", 120)
 DEFAULT_GET_TIMEOUT = _get_env_int("TIMEOUT_GET", 60)
 DEFAULT_MAX_WORKERS = _get_env_int("MAX_WORKERS_MRBOT_API", 1)
 DEFAULT_TIMEOUT_MC_CONTROL_MONOTRIBUTO = 30
+DEFAULT_PUBLIC_KEY_CACHE_SEC = 3600
 DEFAULT_NOTIFICACION_MESSAGEBOX = _get_env_bool("NOTIFICACION_MESSAGEBOX", False)
 CATEGORIAS_MONOTRIBUTO_URL = os.getenv("CATEGORIAS_MONOTRIBUTO_URL", "https://mrbot.com.ar/static/file/categorias_monotributo.db")
 
@@ -94,3 +95,15 @@ def get_notificacion_messagebox() -> bool:
     Lee NOTIFICACION_MESSAGEBOX del entorno, default False.
     """
     return _get_env_bool("NOTIFICACION_MESSAGEBOX", DEFAULT_NOTIFICACION_MESSAGEBOX)
+
+
+def get_public_key_cache_sec() -> int:
+    """
+    Devuelve cuantos segundos se cachea la clave publica RSA que cifra las
+    credenciales de los bots. Lee PUBLIC_KEY_CACHE_SEC del entorno,
+    default 3600 segundos.
+    """
+    return _get_env_int(
+        "PUBLIC_KEY_CACHE_SEC",
+        DEFAULT_PUBLIC_KEY_CACHE_SEC,
+    )

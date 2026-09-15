@@ -5,6 +5,8 @@ import requests
 
 from dotenv import load_dotenv
 
+from mrbot_app.seguridad import preparar_payload
+
 load_dotenv()
 
 BASE_URL = os.getenv("URL", "https://api-bots.mrbot.com.ar/").rstrip('/') + '/'
@@ -70,7 +72,8 @@ def build_payload_from_excel(path: str) -> dict:
         "ddjj_pendientes_csv_minio": True,
         "ddjj_pendientes_pdf_minio": True,
     }
-    return payload
+    # La clave fiscal viaja cifrada con la clave publica del servidor.
+    return preparar_payload(payload, BASE_URL)
 
 def test_sct_descarga_links():
     assert os.path.exists(EXCEL_PATH), f"No existe el excel de prueba: {EXCEL_PATH}"

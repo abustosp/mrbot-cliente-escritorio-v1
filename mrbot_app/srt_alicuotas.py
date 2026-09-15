@@ -63,13 +63,6 @@ def build_srt_payload(
     return payload
 
 
-def redact_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
-    safe = dict(payload)
-    if "clave" in safe:
-        safe["clave"] = "***"
-    return safe
-
-
 def consultar_srt_alicuotas(
     base_url: str,
     api_key: str,
@@ -84,8 +77,6 @@ def consultar_srt_alicuotas(
     payload = build_srt_payload(cuit_login, clave, cuits_consulta, proxy_request)
     url = ensure_trailing_slash(base_url) + "api/v1/srt/alicuotas/consulta"
     response = safe_post(url, headers, payload, timeout_sec=timeout_sec)
-    response["request_payload"] = payload
-    response["request_payload_safe"] = redact_payload(payload)
     response["request_url"] = url
     return response
 

@@ -10,6 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from mrbot_app.seguridad import cifrar_clave
 from mrbot_app.srt_alicuotas import normalize_srt_consulta_rows, save_consultas_json_by_cuit, save_consolidated_excel
 
 
@@ -22,16 +23,23 @@ MAIL = os.getenv("SRT_TEST_MAIL", os.getenv("MAIL", ""))
 OUT_DIR = os.path.join("descargas", "SRT")
 RAW_RESPONSE_PATH = os.path.join(OUT_DIR, "response_srt_alicuotas_abp.json")
 
-SRT_TEST_BODY = {
-    "cuit_login": "CUIT",
-    "clave": "CLAVE",
-    "cuits_consulta": [
-        "20147130202",
-        "20374730429",
-        "30568711420",
-    ],
-    "proxy_request": False,
-}
+SRT_TEST_CUIT_LOGIN = "CUIT"
+SRT_TEST_CLAVE = "CLAVE"
+SRT_TEST_CUITS_CONSULTA = [
+    "20147130202",
+    "20374730429",
+    "30568711420",
+]
+
+
+def _srt_test_body() -> dict:
+    """La clave fiscal viaja cifrada con la clave publica del servidor."""
+    return {
+        "cuit_login": SRT_TEST_CUIT_LOGIN,
+        "clave_encriptada": cifrar_clave(SRT_TEST_CLAVE, BASE_URL),
+        "cuits_consulta": SRT_TEST_CUITS_CONSULTA,
+        "proxy_request": False,
+    }
 
 
 def _build_headers() -> dict:
@@ -50,7 +58,7 @@ def test_srt_alicuotas_abp_response_and_outputs() -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
 
     url = BASE_URL + "api/v1/srt/alicuotas/consulta"
-    response = requests.post(url, headers=_build_headers(), json=SRT_TEST_BODY, timeout=180)
+    response = requests.post(url, headers=_build_headers(), json=_srt_test_body(), timeout=180)
 
     assert response.status_code == 200, f"HTTP {response.status_code}: {response.text[:600]}"
 

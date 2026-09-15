@@ -12,6 +12,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from mrbot_app.consulta import descargar_archivo_minio
+from mrbot_app.seguridad import cifrar_clave
 
 
 load_dotenv()
@@ -41,6 +42,11 @@ if API_KEY:
     HEADERS["x-api-key"] = API_KEY
 if MAIL:
     HEADERS["email"] = MAIL
+
+
+def _cred(clave: str) -> dict:
+    """La clave fiscal viaja cifrada con la clave publica del servidor."""
+    return {"clave_encriptada": cifrar_clave(clave, BASE_URL)}
 
 
 def _download_first(links: list[str]) -> None:
@@ -114,7 +120,7 @@ def test_mis_retenciones_descarga() -> None:
     
     payload = {
         "cuit_representante": TEST_CUIT_REP_1,
-        "clave_representante": TEST_CLAVE_REP_1,
+        **_cred(TEST_CLAVE_REP_1),
         "cuit_representado": TEST_CUIT_REPRESENTADO_1,
         "denominacion": TEST_DENOMINACION_1,
         "desde": "01/11/2025",
@@ -135,7 +141,7 @@ def test_sifere_descarga() -> None:
     
     payload = {
         "cuit_representante": TEST_CUIT_REP_2,
-        "clave_representante": TEST_CLAVE_REP_2,
+        **_cred(TEST_CLAVE_REP_2),
         "cuit_representado": TEST_CUIT_REPRESENTADO_2,
         "periodo": "202401",
         "representado_nombre": TEST_DENOMINACION_2,
@@ -155,7 +161,7 @@ def test_declaracion_en_linea_descarga() -> None:
     
     payload = {
         "cuit_representante": TEST_CUIT_REP_1,
-        "clave_representante": TEST_CLAVE_REP_1,
+        **_cred(TEST_CLAVE_REP_1),
         "cuit_representado": TEST_CUIT_REPRESENTADO_1,
         "representado_nombre": TEST_DENOMINACION_1,
         "periodo_desde": "202511",
@@ -176,7 +182,7 @@ def test_mis_facilidades_descarga() -> None:
     
     payload = {
         "cuit_login": TEST_CUIT_REP_3,
-        "clave": TEST_CLAVE_REP_3,
+        **_cred(TEST_CLAVE_REP_3),
         "cuit_representado": TEST_CUIT_REPRESENTADO_3,
         "denominacion": TEST_DENOMINACION_3,
         "lista_exclusion_situacion": ["Vigente", "Plan Cancelado"],
@@ -200,7 +206,7 @@ def test_aportes_en_linea_descarga() -> None:
     
     payload = {
         "cuit_login": test_cuit,
-        "clave": test_clave,
+        **_cred(test_clave),
         "cuit_representado": test_cuit,
         "archivo_historico_minio": True,
         "proxy_request": False,

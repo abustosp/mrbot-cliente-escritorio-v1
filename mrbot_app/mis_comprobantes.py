@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from mrbot_app.consulta import descargar_archivos_minio_concurrente
 from mrbot_app.config import get_notificacion_messagebox
 from mrbot_app.helpers import format_date_str, get_unique_filename
+from mrbot_app.seguridad import ClaveEncriptacionError, preparar_payload
 
 
 load_dotenv(".env", override=True)
@@ -442,12 +443,18 @@ def consulta_mc(
     if timeout_mc is not None:
         payload["timeout_mc"] = timeout_mc
 
-    safe_payload = dict(payload)
-    if "contrasena" in safe_payload:
-        safe_payload["contrasena"] = "***"
+    try:
+        payload = preparar_payload(payload, root_url)
+    except ClaveEncriptacionError as exc:
+        _log_error(f"No se pudo cifrar la clave fiscal: {exc}", log_fn)
+        return {
+            "success": False,
+            "error": f"No se pudo cifrar la clave fiscal: {exc}",
+            "http_status": None,
+        }
     request_start = datetime.now()
     _log_message(f"REQUEST INICIO: {request_start.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}", log_fn)
-    _log_request(safe_payload, log_fn)
+    _log_request(payload, log_fn)
     _log_message("", log_fn)
 
     response = requests.post(url, headers=headers, json=payload)

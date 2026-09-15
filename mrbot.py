@@ -23,6 +23,7 @@ from mrbot_app.windows import (
     MisFacilidadesWindow,
     RcelWindow,
     MisRetencionesWindow,
+    MisRetencionesIvaSimpleWindow,
     SifereWindow,
     SctWindow,
     SrtAlicuotasWindow,

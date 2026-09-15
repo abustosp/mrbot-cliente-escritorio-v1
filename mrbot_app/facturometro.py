@@ -19,6 +19,7 @@ from mrbot_app.helpers import (
     ensure_trailing_slash,
     safe_post,
 )
+from mrbot_app.seguridad import ClaveEncriptacionError, preparar_payload
 
 MODULE_DIR = "facturometro"
 
@@ -41,10 +42,26 @@ def consultar_facturometro(
     headers = build_headers(api_key, email)
     payload = {"cuit_login": cuit_login, "clave": clave, "cuit_representado": cuit_representado}
 
+    try:
+        payload = preparar_payload(payload, base_url)
+    except ClaveEncriptacionError as exc:
+        if log_fn:
+            log_fn(f"ERROR: No se pudo cifrar la clave fiscal: {exc}")
+        return {
+            "cuit_login": cuit_login,
+            "cuit_representado": cuit_representado,
+            "success": False,
+            "http_status": None,
+            "message": f"No se pudo cifrar la clave fiscal: {exc}",
+            "error_code": "",
+            "monto_facturado": None,
+            "tope_facturacion": None,
+            "categoria": None,
+            "screenshot_url": None,
+        }
+
     if log_fn:
-        safe = payload.copy()
-        safe["clave"] = "***"
-        log_fn(f"REQUEST: {json.dumps(safe, ensure_ascii=False)}")
+        log_fn(f"REQUEST: {json.dumps(payload, ensure_ascii=False)}")
 
     resp = safe_post(url, headers, payload)
     http_status = resp.get("http_status")

@@ -20,6 +20,7 @@ from mrbot_app.config import (
 )
 from mrbot_app.constants import BG, FG
 from mrbot_app.helpers import _format_dates_str
+from mrbot_app.seguridad import ClaveEncriptacionError, preparar_payload
 
 
 class BaseWindow(tk.Toplevel):
@@ -208,6 +209,19 @@ class BaseWindow(tk.Toplevel):
         self.log_message(f"RESPONSE FIN: {self._format_precise_timestamp(finished_at)}")
         self.log_response(http_status, payload)
         self.log_message("")
+
+    def cifrar_payload(self, payload: Dict[str, Any], url: str) -> Optional[Dict[str, Any]]:
+        """Cifra la clave fiscal con la clave publica del servidor.
+
+        Devuelve el body que se envia (con ``clave_encriptada`` y sin la clave en
+        texto plano) para poder loguearlo tal cual, o None si no se pudo cifrar
+        (en ese caso ya queda el error en el log).
+        """
+        try:
+            return preparar_payload(payload, url)
+        except ClaveEncriptacionError as exc:
+            self.log_error(f"No se pudo cifrar la clave fiscal: {exc}")
+            return None
 
     def log_start(self, title: str, details: Optional[Dict[str, Any]] = None) -> None:
         detail_text = ""

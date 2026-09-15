@@ -86,12 +86,6 @@ class FacturometroWindow(BaseWindow, ExcelHandlerMixin):
             return
         self.log_message(text)
 
-    def _redact(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        safe = dict(payload)
-        if "clave" in safe:
-            safe["clave"] = "***"
-        return safe
-
     def _downloads_dir(self) -> str:
         return os.path.join("descargas", self.MODULE_DIR)
 

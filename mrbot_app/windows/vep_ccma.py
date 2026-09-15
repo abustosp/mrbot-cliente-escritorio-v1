@@ -313,12 +313,13 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         )
 
     def _worker_individual(self, url, headers, payload):
-        safe_payload = dict(payload)
-        safe_payload["clave_representante"] = "***"
         cuit_label = payload["cuit_representado"] or payload["cuit_representante"]
         self.log_start("VEP-CCMA", {"modo": "individual"})
         self.log_separator(cuit_label)
-        self.log_request_started(safe_payload)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return
+        self.log_request_started(payload)
         resp = safe_post(url, headers, payload)
         data = resp.get("data")
         http_status = resp.get("http_status")
@@ -470,9 +471,10 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
             filtro_intereses=filtro_intereses,
         )
 
-        safe_payload = dict(payload)
-        safe_payload["clave_representante"] = "***"
         self.log_separator(cuit_repr or cuit_rep)
+        payload = self.cifrar_payload(payload, url)
+        if payload is None:
+            return None
 
         try:
             retry_val = int(row.get("retry", 0))
@@ -485,7 +487,7 @@ class VepCcmaWindow(BaseWindow, ExcelHandlerMixin, DownloadHandlerMixin):
         http_status = None
 
         for attempt in range(1, total_attempts + 1):
-            self.log_request_started(safe_payload, attempt=attempt, total_attempts=total_attempts)
+            self.log_request_started(payload, attempt=attempt, total_attempts=total_attempts)
             resp = safe_post(url, headers, payload)
             http_status = resp.get("http_status")
             data = resp.get("data")
