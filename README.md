@@ -84,6 +84,13 @@ Desde la GUI puedes:
 - Editar base URL, API key y mail.
 - Procesar Mis Comprobantes masivo (usa `mrbot_app.mis_comprobantes.consulta_mc_csv`).
 - Consultar RCEL, SCT, SRT Alícuotas ART, CCMA, Apócrifos y CUIT (individual/masivo según módulo).
+- Descargar Mis Retenciones y Mis Retenciones IVA Simple (individual o masivo por Excel).
+  - El Excel de Mis Retenciones acepta la columna opcional `exportar_para_aplicativo` (default `NO`):
+    con `SI` exporta para SIAP y solo admite los impuestos 216, 217, 219, 767 y 353. Si la celda
+    queda vacía (o la columna no está), se usa el check "Exportar para aplicativo" de la ventana.
+  - El Excel de Mis Retenciones IVA Simple usa las columnas `procesar`, `cuit_representante`,
+    `clave_representante`, `cuit_representado`, `denominacion`, `desde`, `hasta`,
+    `ubicacion_descarga`, `proxy_request` y `retry` (plantilla en `ejemplos_api/`).
 - Abrir `Webservices` y seleccionar servicio (`veconsumerws` o `wsfe`).
 - Generar token/sign desde `https://api-certificados.mrbot.com.ar/` (sin consumir API middleware de e-ventanilla).
 - Guardar el body del response en JSON con `Guardar token y sign` en `descargas/webservices/{servicio}/{cuit}/`.

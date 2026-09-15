@@ -69,7 +69,7 @@ CASOS = [
     ("ret_per_agip", "RetPerAgipWindow", "agip/consulta", "consulta_individual", True),
     ("ret_per_misiones", "RetPerMisionesWindow", "misiones/consulta", "consulta_individual", True),
     ("vep_ccma", "VepCcmaWindow", "vep-ccma/generar", "consulta_individual", True),
-    ("mis_retenciones_iva_simple", "MisRetencionesIvaSimpleWindow", "mis_retenciones_iva_simple/consulta", "consulta_individual", False),
+    ("mis_retenciones_iva_simple", "MisRetencionesIvaSimpleWindow", "mis_retenciones_iva_simple/consulta", "consulta_individual", True),
 ]
 
 
