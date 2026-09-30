@@ -20,6 +20,20 @@ def _load_scanner():
     return module
 
 
+def _write_package(package: Path, env_text: str | None = None) -> None:
+    (package / "mrbot").write_bytes(b"release payload")
+    if env_text is not None:
+        (package / ".env").write_text(env_text, encoding="utf-8")
+
+
+def _expect_scan_error(scanner, package: Path, allow_env_template: bool) -> None:
+    try:
+        scanner.scan(package, allow_env_template=allow_env_template)
+    except scanner.ScanError:
+        return
+    raise AssertionError("El escáner debía rechazar el paquete")
+
+
 def test_workflow_triggers_existing_date_and_explicit_rollback_tags():
     assert "- '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]'" in WORKFLOW_TEXT
     assert "- '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]'" in WORKFLOW_TEXT
@@ -51,10 +65,14 @@ def test_workflow_publishes_zip_and_sha256_for_both_platforms():
     assert "prerelease: ${{ needs.validate-tag.outputs.prerelease }}" in WORKFLOW_TEXT
 
 
-def test_workflow_does_not_copy_env_and_scans_both_packages():
-    assert 'cp -a "Ejecutable/.env"' not in WORKFLOW_TEXT
-    assert 'Copy-Item ".\\Ejecutable\\.env"' not in WORKFLOW_TEXT
+def test_workflow_ships_only_the_env_template_generated_by_the_build():
+    # La plantilla sale de Ejecutable/.env (generado por los build scripts desde .env.example).
+    assert 'cp -a "Ejecutable/.env" "$PACKAGE_DIR/.env"' in WORKFLOW_TEXT
+    assert 'Copy-Item ".\\Ejecutable\\.env"' in WORKFLOW_TEXT
+    # El .env real del repo no se versiona y el workflow no debe copiarlo.
+    assert 'cp -a ".env"' not in WORKFLOW_TEXT
     assert WORKFLOW_TEXT.count("scan_release_secrets.py") == 2
+    assert WORKFLOW_TEXT.count("--allow-env-template") == 2
     assert "$LASTEXITCODE -ne 0" in WORKFLOW_TEXT
 
 
@@ -74,12 +92,7 @@ def test_scanner_fails_closed_on_secret_like_content():
         package = Path(package_dir)
         (package / "safe-name.bin").write_bytes(b"AKIA1234567890ABCDEF")
 
-        try:
-            scanner.scan(package)
-        except scanner.ScanError:
-            pass
-        else:
-            raise AssertionError("El escáner debe fallar ante contenido sensible")
+        _expect_scan_error(scanner, package, allow_env_template=False)
 
 
 def test_scanner_accepts_non_secret_package_content():
@@ -89,3 +102,55 @@ def test_scanner_accepts_non_secret_package_content():
         (package / "safe-name.bin").write_bytes(b"release payload")
 
         assert scanner.scan(package) == 1
+
+
+def test_scanner_rejects_env_by_default_and_allows_it_only_with_the_flag():
+    scanner = _load_scanner()
+    with TemporaryDirectory() as package_dir:
+        package = Path(package_dir)
+        _write_package(package, "URL=https://api-bots.mrbot.com.ar\nAPI_KEY=tu_api_key_aqui\n")
+
+        _expect_scan_error(scanner, package, allow_env_template=False)
+        assert scanner.scan(package, allow_env_template=True) == 2
+
+
+def test_scanner_only_allows_a_root_level_dot_env_with_the_flag():
+    scanner = _load_scanner()
+    for relative_path in (".env.production", "sub/.env", "sub/.env.example"):
+        with TemporaryDirectory() as package_dir:
+            package = Path(package_dir)
+            _write_package(package, "API_KEY=\n")
+            target = package / relative_path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("API_KEY=\n", encoding="utf-8")
+
+            _expect_scan_error(scanner, package, allow_env_template=True)
+
+
+def test_scanner_still_flags_secret_like_content_inside_the_allowed_template():
+    scanner = _load_scanner()
+    with TemporaryDirectory() as package_dir:
+        package = Path(package_dir)
+        _write_package(package, "API_KEY=1234567890abcdef1234567890abcdef\n")
+
+        _expect_scan_error(scanner, package, allow_env_template=True)
+
+
+def test_scanner_rejects_malformed_or_empty_allowed_templates():
+    scanner = _load_scanner()
+    for bad_template in ("# solo comentarios\n", "\n", "esto no es una variable\n"):
+        with TemporaryDirectory() as package_dir:
+            package = Path(package_dir)
+            _write_package(package, bad_template)
+
+            _expect_scan_error(scanner, package, allow_env_template=True)
+
+
+def test_scanner_cli_wires_the_allow_env_template_flag():
+    scanner = _load_scanner()
+    with TemporaryDirectory() as package_dir:
+        package = Path(package_dir)
+        _write_package(package, "URL=https://api-bots.mrbot.com.ar\n")
+
+        assert scanner.main(["--allow-env-template", str(package)]) == 0
+        assert scanner.main([str(package)]) == 1

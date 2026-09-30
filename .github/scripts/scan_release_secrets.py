@@ -3,7 +3,10 @@
 
 The scanner is intentionally dependency-free so Linux and Windows use the same
 implementation. Environment files are rejected by name before their contents
-could be opened. Any traversal or read error is a failure.
+could be opened, with one explicit exception: ``--allow-env-template`` permits
+exactly one ``.env`` at the root of the package (the template generated from
+``.env.example`` by the build scripts). Even that file is validated and scanned
+for secret-like content. Any traversal or read error is a failure.
 """
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ class ScanError(RuntimeError):
 
 
 _ENV_FILE_RE = re.compile(r"^(?:\.env|.*\.env(?:\..*)?)$", re.IGNORECASE)
+_ENV_TEMPLATE_RELATIVE = Path(".env")
+_ENV_LINE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")
 _SECRET_PATTERNS = (
     ("private key", re.compile(rb"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")),
     ("AWS access key", re.compile(rb"\bAKIA[0-9A-Z]{16}\b")),
@@ -48,7 +53,43 @@ def is_env_file(path: Path) -> bool:
     return _ENV_FILE_RE.fullmatch(path.name) is not None
 
 
-def _iter_files(root: Path) -> Iterator[Path]:
+def _is_allowed_env_template(path: Path, root: Path, allow_env_template: bool) -> bool:
+    """Return whether *path* is the one .env file the caller explicitly allowed."""
+
+    if not allow_env_template or not is_env_file(path):
+        return False
+    try:
+        relative_path = path.relative_to(root)
+    except ValueError:
+        return False
+    return relative_path == _ENV_TEMPLATE_RELATIVE
+
+
+def _validate_env_template(path: Path, contents: bytes) -> None:
+    """Validate the allowed .env template before trusting its shape."""
+
+    try:
+        text = contents.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ScanError(f"La plantilla .env no es UTF-8 valido: {path.name}") from error
+
+    if text.startswith("\ufeff"):
+        raise ScanError(f"La plantilla .env tiene BOM y python-dotenv no lo admite: {path.name}")
+
+    meaningful_lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    if not meaningful_lines:
+        raise ScanError(f"La plantilla .env esta vacia: {path.name}")
+
+    for line in meaningful_lines:
+        if _ENV_LINE_RE.fullmatch(line) is None:
+            raise ScanError(f"La plantilla .env tiene una linea invalida: {line[:60]}")
+
+
+def _iter_files(root: Path, allow_env_template: bool = False) -> Iterator[Path]:
     """Yield regular files, refusing unsafe filesystem entries."""
 
     def on_error(error: OSError) -> None:
@@ -64,7 +105,7 @@ def _iter_files(root: Path) -> Iterator[Path]:
         for name in list(dirnames):
             path = directory_path / name
             if is_env_file(path):
-                raise ScanError(f"El paquete contiene un archivo .env: {path.name}")
+                raise ScanError(f"El paquete contiene una carpeta .env: {path.name}")
             if path.is_symlink():
                 raise ScanError(f"El paquete contiene un enlace simbolico: {path.name}")
 
@@ -72,7 +113,8 @@ def _iter_files(root: Path) -> Iterator[Path]:
             path = directory_path / name
             # Check the name before any operation that could open or follow it.
             if is_env_file(path):
-                raise ScanError(f"El paquete contiene un archivo .env: {path.name}")
+                if not _is_allowed_env_template(path, root, allow_env_template):
+                    raise ScanError(f"El paquete contiene un archivo .env: {path.name}")
             if path.is_symlink():
                 raise ScanError(f"El paquete contiene un enlace simbolico: {path.name}")
             if not path.is_file():
@@ -80,8 +122,8 @@ def _iter_files(root: Path) -> Iterator[Path]:
             yield path
 
 
-def _scan_file(path: Path, root: Path) -> None:
-    if is_env_file(path):
+def _scan_file(path: Path, root: Path, allow_env_template: bool = False) -> None:
+    if is_env_file(path) and not _is_allowed_env_template(path, root, allow_env_template):
         raise ScanError(f"Se rechazo la lectura de un archivo .env: {path.name}")
 
     try:
@@ -89,21 +131,24 @@ def _scan_file(path: Path, root: Path) -> None:
     except OSError as error:
         raise ScanError(f"No se pudo leer un archivo del paquete: {path.name}") from error
 
+    if is_env_file(path):
+        _validate_env_template(path, contents)
+
     for label, pattern in _SECRET_PATTERNS:
         if pattern.search(contents):
             relative_path = path.relative_to(root)
             raise ScanError(f"Contenido sensible detectado en {relative_path} ({label})")
 
 
-def scan(root: Path) -> int:
+def scan(root: Path, allow_env_template: bool = False) -> int:
     """Scan *root* and return the number of regular files inspected."""
 
     if not root.exists() or not root.is_dir():
         raise ScanError(f"El directorio del paquete no existe: {root}")
 
     scanned = 0
-    for path in _iter_files(root):
-        _scan_file(path, root)
+    for path in _iter_files(root, allow_env_template):
+        _scan_file(path, root, allow_env_template)
         scanned += 1
 
     if scanned == 0:
@@ -114,10 +159,18 @@ def scan(root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("package_dir", type=Path)
+    parser.add_argument(
+        "--allow-env-template",
+        action="store_true",
+        help=(
+            "Permite exactamente un .env en la raiz del paquete: la plantilla "
+            "generada desde .env.example por los scripts de build."
+        ),
+    )
     args = parser.parse_args(argv)
 
     try:
-        scanned = scan(args.package_dir)
+        scanned = scan(args.package_dir, allow_env_template=args.allow_env_template)
     except ScanError as error:
         print(f"Secret scan failed closed: {error}", file=sys.stderr)
         return 1

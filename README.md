@@ -192,6 +192,10 @@ Nombres de ZIP generados:
 - `mrbot-refactored.<tag>.Linux.zip`
 - `mrbot-refactored.<tag>.Windows.zip`
 
+Cada ZIP incluye el ejecutable, `bin/`, `ejemplos_api/` y un `.env` de plantilla generado desde
+`.env.example` (sin las variables de tests de integración). Completá `MAIL` y `API_KEY` en ese
+`.env` antes de ejecutar.
+
 Comandos de ejemplo para publicar una versión:
 ```bash
 # primera release del dia
