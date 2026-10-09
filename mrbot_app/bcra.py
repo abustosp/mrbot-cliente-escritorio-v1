@@ -1,4 +1,7 @@
 import math
+import random
+import threading
+import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import quote
 
@@ -9,6 +12,18 @@ from urllib3.exceptions import InsecureRequestWarning
 
 BCRA_BASE_URL = "https://api.bcra.gob.ar"
 DEFAULT_BCRA_TIMEOUT = 60
+
+# Reintentos ante errores transitorios del BCRA (cortes de conexion, 429, 5xx).
+# Las consultas son siempre secuenciales: _BCRA_REQUEST_LOCK serializa los requests
+# aunque el modulo se use desde varios hilos.
+DEFAULT_BCRA_RETRIES = 10
+BCRA_RETRY_BACKOFF_BASE = 0.8
+BCRA_RETRY_BACKOFF_MAX = 5.0
+BCRA_RETRY_JITTER = 0.4
+BCRA_RATE_LIMIT_BACKOFF_BASE = 5.0
+BCRA_RATE_LIMIT_BACKOFF_MAX = 20.0
+BCRA_RATE_LIMIT_JITTER = 1.0
+_BCRA_REQUEST_LOCK = threading.Lock()
 
 # Definicion de operaciones soportadas segun OpenAPI oficial del BCRA.
 BCRA_OPERATIONS: Dict[str, Dict[str, Any]] = {
@@ -220,59 +235,115 @@ def _build_url(base_url: str, path: str) -> str:
     return base_url.rstrip("/") + "/" + path.lstrip("/")
 
 
+def _retry_delay(attempt: int, rate_limited: bool) -> float:
+    if rate_limited:
+        base = min(BCRA_RATE_LIMIT_BACKOFF_BASE * attempt, BCRA_RATE_LIMIT_BACKOFF_MAX)
+        return base + random.uniform(0, BCRA_RATE_LIMIT_JITTER)
+    base = min(BCRA_RETRY_BACKOFF_BASE * attempt, BCRA_RETRY_BACKOFF_MAX)
+    return base + random.uniform(0, BCRA_RETRY_JITTER)
+
+
+def _is_retryable_status(status: Any) -> bool:
+    return status == 429 or (isinstance(status, int) and status >= 500)
+
+
+def _connection_error_result(
+    url: str,
+    message: str,
+    ssl_verified: bool,
+    attempts: int,
+    retry_errors: List[str],
+    rate_limited: bool = False,
+) -> Dict[str, Any]:
+    return {
+        "http_status": None,
+        "url": url,
+        "data": {
+            "status": None,
+            "errorMessages": [message],
+        },
+        "ssl_verified": ssl_verified,
+        "attempts": attempts,
+        "rate_limited": rate_limited,
+        "retry_errors": list(retry_errors),
+    }
+
+
 def _request_bcra_json(
     path: str,
     query_params: Optional[Dict[str, Any]] = None,
     base_url: str = BCRA_BASE_URL,
     timeout_sec: int = DEFAULT_BCRA_TIMEOUT,
     allow_insecure_fallback: bool = True,
+    max_retries: int = DEFAULT_BCRA_RETRIES,
 ) -> Dict[str, Any]:
     url = _build_url(base_url, path)
+    params = query_params or None
+    max_attempts = max(1, int(max_retries) + 1)
+
     used_ssl_verification = True
+    attempts = 0
+    retry_errors: List[str] = []
+    rate_limited = False
 
-    try:
-        resp = requests.get(url, params=query_params or None, timeout=timeout_sec)
-    except SSLError as exc:
-        if not allow_insecure_fallback:
-            return {
-                "http_status": None,
-                "url": url,
-                "data": {
-                    "status": None,
-                    "errorMessages": [f"Error SSL: {exc}"],
-                },
-                "ssl_verified": True,
-            }
+    # El lock garantiza que las consultas al BCRA se hagan siempre de a una,
+    # aunque el modulo se invoque desde varios hilos.
+    with _BCRA_REQUEST_LOCK:
+        resp = None
+        while attempts < max_attempts:
+            attempts += 1
+            try:
+                resp = requests.get(url, params=params, timeout=timeout_sec)
+            except SSLError as exc:
+                if not allow_insecure_fallback:
+                    return _connection_error_result(
+                        url, f"Error SSL: {exc}", used_ssl_verification, attempts, retry_errors
+                    )
 
-        requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
-        used_ssl_verification = False
-        try:
-            resp = requests.get(
-                url,
-                params=query_params or None,
-                timeout=timeout_sec,
-                verify=False,
-            )
-        except Exception as retry_exc:
-            return {
-                "http_status": None,
-                "url": url,
-                "data": {
-                    "status": None,
-                    "errorMessages": [f"Error de conexion: {retry_exc}"],
-                },
-                "ssl_verified": used_ssl_verification,
-            }
-    except Exception as exc:
-        return {
-            "http_status": None,
-            "url": url,
-            "data": {
-                "status": None,
-                "errorMessages": [f"Error de conexion: {exc}"],
-            },
-            "ssl_verified": used_ssl_verification,
-        }
+                requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+                used_ssl_verification = False
+                try:
+                    resp = requests.get(
+                        url,
+                        params=params,
+                        timeout=timeout_sec,
+                        verify=False,
+                    )
+                except Exception as retry_exc:
+                    if attempts < max_attempts:
+                        retry_errors.append(f"Intento {attempts}: {retry_exc}")
+                        time.sleep(_retry_delay(attempts, rate_limited))
+                        continue
+                    return _connection_error_result(
+                        url,
+                        f"Error de conexion: {retry_exc}",
+                        used_ssl_verification,
+                        attempts,
+                        retry_errors,
+                        rate_limited,
+                    )
+            except Exception as exc:
+                if attempts < max_attempts:
+                    retry_errors.append(f"Intento {attempts}: {exc}")
+                    time.sleep(_retry_delay(attempts, rate_limited))
+                    continue
+                return _connection_error_result(
+                    url,
+                    f"Error de conexion: {exc}",
+                    used_ssl_verification,
+                    attempts,
+                    retry_errors,
+                    rate_limited,
+                )
+
+            if _is_retryable_status(resp.status_code):
+                if resp.status_code == 429:
+                    rate_limited = True
+                if attempts < max_attempts:
+                    retry_errors.append(f"Intento {attempts}: HTTP {resp.status_code}")
+                    time.sleep(_retry_delay(attempts, resp.status_code == 429))
+                    continue
+            break
 
     try:
         payload = resp.json()
@@ -288,6 +359,9 @@ def _request_bcra_json(
         "url": resp.url,
         "data": payload,
         "ssl_verified": used_ssl_verification,
+        "attempts": attempts,
+        "rate_limited": rate_limited,
+        "retry_errors": retry_errors,
     }
 
 
@@ -337,6 +411,7 @@ def _resolve_previous_cotizacion_date(
     base_url: str,
     timeout_sec: int,
     allow_insecure_fallback: bool,
+    max_retries: int = DEFAULT_BCRA_RETRIES,
 ) -> Tuple[Optional[str], Optional[str]]:
     # Se consulta USD como moneda de referencia para ubicar la ultima fecha habil <= requested_date.
     lookup_resp = _request_bcra_json(
@@ -350,6 +425,7 @@ def _resolve_previous_cotizacion_date(
         base_url=base_url,
         timeout_sec=timeout_sec,
         allow_insecure_fallback=allow_insecure_fallback,
+        max_retries=max_retries,
     )
     lookup_warning = lookup_resp.get("ssl_warning")
     lookup_data = lookup_resp.get("data")
@@ -373,6 +449,7 @@ def run_bcra_operation(
     base_url: str = BCRA_BASE_URL,
     timeout_sec: int = DEFAULT_BCRA_TIMEOUT,
     allow_insecure_fallback: bool = True,
+    max_retries: int = DEFAULT_BCRA_RETRIES,
 ) -> Dict[str, Any]:
     spec, prepared = _prepare_operation_params(operation, params)
 
@@ -394,6 +471,7 @@ def run_bcra_operation(
         base_url=base_url,
         timeout_sec=timeout_sec,
         allow_insecure_fallback=allow_insecure_fallback,
+        max_retries=max_retries,
     )
 
     if operation == "cambiarias_cotizaciones" and "fecha" in prepared and _is_empty_cotizaciones_payload(response.get("data")):
@@ -403,6 +481,7 @@ def run_bcra_operation(
             base_url=base_url,
             timeout_sec=timeout_sec,
             allow_insecure_fallback=allow_insecure_fallback,
+            max_retries=max_retries,
         )
         if available_date and available_date != requested_date:
             retry_resp = _request_bcra_json(
@@ -411,6 +490,7 @@ def run_bcra_operation(
                 base_url=base_url,
                 timeout_sec=timeout_sec,
                 allow_insecure_fallback=allow_insecure_fallback,
+                max_retries=max_retries,
             )
             retry_resp["date_adjustment_warning"] = (
                 f"No hubo cotizaciones para {requested_date}. "

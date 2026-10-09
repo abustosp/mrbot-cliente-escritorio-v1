@@ -352,6 +352,7 @@ class BcraWindow(BaseWindow):
                 "operacion": operation,
                 "http_status": response.get("http_status") if isinstance(response, dict) else None,
                 "status": data.get("status") if isinstance(data, dict) else None,
+                "intentos": response.get("attempts") if isinstance(response, dict) else None,
                 "registros": len(flattened) if isinstance(flattened, list) else 0,
                 "error": result.get("error") if isinstance(result, dict) else None,
                 "reporte_individual": report_path,
@@ -587,6 +588,11 @@ class BcraWindow(BaseWindow):
             base_url=base_url,
         )
         self.log_response_finished(response.get("http_status"), response.get("data"))
+        attempts = int(response.get("attempts") or 1)
+        if attempts > 1:
+            self.log_info(
+                f"Consulta completada tras {attempts} intentos (reintentos por errores transitorios del BCRA)."
+            )
         if response.get("date_adjustment_warning"):
             self.log_info(str(response.get("date_adjustment_warning")))
         if response.get("lookup_ssl_warning"):
@@ -848,6 +854,7 @@ class BcraWindow(BaseWindow):
                             "operacion": operation,
                             "http_status": response.get("http_status"),
                             "status": data.get("status") if isinstance(data, dict) else None,
+                            "intentos": response.get("attempts"),
                             "registros": len(flattened),
                             "error": "; ".join(errors) if errors else None,
                         }
